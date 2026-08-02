@@ -6,9 +6,7 @@ import { logger } from '../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('dryscan')
-  .setDescription(
-    'Dry run: scan members with the full detection engine but never ban anyone. Use this to verify accuracy first.',
-  );
+  .setDescription('Dry run scan: same detection as /scan but never bans anyone. Use to verify accuracy first.');
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!(await requireOwner(interaction))) return;

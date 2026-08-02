@@ -6,7 +6,7 @@ import { logger } from '../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('scan')
-  .setDescription('Scan all server members for fake/botted accounts and begin the ban workflow.');
+  .setDescription('Scan all server members for fake/botted accounts and start the review workflow.');
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!(await requireOwner(interaction))) return;
