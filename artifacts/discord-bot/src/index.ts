@@ -66,6 +66,8 @@ if (!token) {
 }
 
 client.login(token).catch(err => {
-  logger.error('Failed to log in to Discord', { error: err });
+  const message = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string | number })?.code;
+  logger.error(`Failed to log in to Discord: ${message}${code ? ` (code: ${code})` : ''}`);
   process.exit(1);
 });

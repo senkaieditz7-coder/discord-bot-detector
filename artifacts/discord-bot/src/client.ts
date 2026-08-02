@@ -9,12 +9,18 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js';
  */
 export const client = new Client({
   intents: [
+    // Standard intents (no approval needed)
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+
+    // ── Privileged intents ─────────────────────────────────────────────────
+    // These MUST be enabled in Discord Developer Portal →
+    //   Applications → [Your App] → Bot → Privileged Gateway Intents
+    //
+    // 1. GuildMembers  → "Server Members Intent"  (required: fetch all members)
+    // 2. MessageContent → "Message Content Intent" (required: rescue-mention system)
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildVoiceStates,
   ],
   partials: [Partials.Message, Partials.GuildMember, Partials.User],
 });
