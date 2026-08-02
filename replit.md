@@ -1,67 +1,65 @@
 # Discord Bot Detector
 
-A Discord bot that identifies and removes fake/botted members from a server using a weighted confidence scoring system with multi-stage manual approval workflows.
+A Discord bot that detects and removes fake/botted members from your server using a multi-stage review workflow. Scan members, review flagged accounts across two stages, rescue any false positives, then execute bans — all through Discord slash commands.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/discord-bot run dev` — run the Discord bot (uses `tsx` for TypeScript)
-- `pnpm --filter @workspace/discord-bot run deploy-commands` — register slash commands with Discord (run once, or after changing commands)
+- **Bot workflow** runs automatically: `Discord Bot` — uses `pnpm --filter @workspace/discord-bot run dev`
+- `pnpm --filter @workspace/discord-bot run deploy-commands` — register slash commands with Discord (run once after bot token setup, or after adding new commands)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
+
+## Required Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `DISCORD_BOT_TOKEN` | Bot token from Discord Developer Portal → Bot → Token |
+| `DISCORD_APPLICATION_ID` | App ID from Developer Portal → General Information |
+| `DISCORD_GUILD_ID` | Your server ID (for instant command registration) |
+
+## Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/scan` | Full scan — detects bots and starts the ban workflow |
+| `/dryscan` | Dry run — same detection, no bans. Use to verify accuracy first |
+
+Only the owner (user ID in `src/config.ts`) can run commands.
+
+## Detection Signals (7 total)
+
+- **Account Age** — very new accounts (max 30 pts)
+- **Join Wave** — large bursts of joins in short windows (max 25 pts)
+- **Username Pattern** — random strings, consecutive digits, bot patterns (max 20 pts)
+- **Avatar** — no avatar or default avatar (max 15 pts)
+- **Sequential Creation** — accounts created in rapid sequence (max 10 pts)
+- **No Roles** — only @everyone (max 5 pts)
+- **Profile Customization** — no banner or display name (max 8 pts)
+
+Thresholds: High Confidence ≥ 65 | Possible Fake ≥ 35
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- Discord: discord.js v14 (slash commands, button interactions, message collectors)
-- Database: Node.js built-in `node:sqlite` (no native deps)
-- Logging: winston (file + console transport)
+- Discord.js 14
+- SQLite (node:sqlite built-in) for scan logs
+- Winston for logging
+- Bot lives in `artifacts/discord-bot/`
 
-## Where things live
+## Architecture Decisions
 
-- `artifacts/discord-bot/src/config.ts` — owner ID, scoring thresholds, timing constants
-- `artifacts/discord-bot/src/detection/engine.ts` — orchestrates all detection signals
-- `artifacts/discord-bot/src/detection/signals/` — individual heuristic modules (add new ones here)
-- `artifacts/discord-bot/src/workflow/` — multi-stage scan state machine
-- `artifacts/discord-bot/src/database/` — SQLite schema + queries via `node:sqlite`
-- `artifacts/discord-bot/data/bot.db` — SQLite database (created at runtime)
-- `artifacts/discord-bot/logs/` — winston log files (created at runtime)
+- One active scan session per guild at a time (enforced by `ScanSession.ts`)
+- 3-stage confirmation before any bans (Stage 1 → Stage 2 → Final Review)
+- Rescue system: mention members in chat during review to save them from bans
+- BAN_DELAY_MS = 1500ms between each ban to respect Discord rate limits
+- Scan logs stored in `artifacts/discord-bot/data/bot.db` (gitignored)
 
-## Architecture decisions
+## User Preferences
 
-- **Weighted scoring, not binary flags** — each signal contributes a score; multiple weak signals combine before anyone is flagged.
-- **`node:sqlite` (built-in)** — chosen over `better-sqlite3` to avoid native build deps (Python/node-gyp unavailable).
-- **In-memory session state** — scan sessions live in a `Map<guildId, ScanSession>`; one active scan per guild.
-- **Rescue system** — `messageCreate` collector listens for owner mentions during Stage 1 & 2, immediately removing mentioned members from pending lists.
-- **Triple confirmation** — three separate button clicks required before any ban executes.
-- **Dry run flag** — identical detection pipeline; final step shows summary instead of banning.
-
-## Product
-
-Slash commands:
-- `/scan` — full workflow: scan → Stage 1 (high confidence) → Stage 2 (possible fake) → final review → triple-confirm → ban
-- `/dryscan` — identical detection, shows everything, never modifies any member
-
-Detection signals (all additive):
-1. Account age (max 30 pts)
-2. Default avatar (15 pts)
-3. Username pattern — entropy, digit runs, bot patterns (max 20 pts)
-4. Join wave — 5+ members in 1-hour window (max 25 pts)
-5. Sequential account creation (15 pts)
-6. No roles assigned (5 pts)
-7. Profile customization — no banner/global name (max 8 pts)
-
-Score thresholds: ≥65 = High Confidence (Stage 1), ≥35 = Possible Fake (Stage 2)
-
-## User preferences
-
-- Owner Discord ID: `1472802482152542410`
-- Never auto-ban; every action requires manual approval
-- Prioritise minimising false positives over catching more bots
-- New detection heuristics should be added by creating a new file in `src/detection/signals/` and appending to the `signals` array in `engine.ts`
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
 
-- The bot requires three privileged intents: **Server Members Intent**, **Message Content Intent** (and optionally Presence Intent). Enable all three under Bot → Privileged Gateway Intents in the Discord Developer Portal.
-- Run `pnpm --filter @workspace/discord-bot run deploy-commands` once after first setup (or after changing command definitions) before the slash commands appear in Discord.
-- `DISCORD_GUILD_ID` env var is optional: set it to your server ID for instant command registration during development (vs. up to 1 hour for global registration).
-- `node:sqlite` is stable in Node.js 24 with no flags needed.
+- GuildMembers and MessageContent are **privileged intents** — must be enabled in Discord Developer Portal → Applications → [App] → Bot → Privileged Gateway Intents
+- After adding new slash commands, re-run `deploy-commands` to register them
+- DISCORD_GUILD_ID set → commands register instantly; without it → up to 1 hour delay
