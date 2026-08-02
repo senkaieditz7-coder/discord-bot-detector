@@ -4,6 +4,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   type APIEmbed,
 } from 'discord.js';
 import type { MemberResult } from '../detection/engine.js';
@@ -176,7 +178,7 @@ export function buildFinalReviewEmbed(session: ScanSession): EmbedBuilder {
     .setDescription(
       session.isDryRun
         ? `This is a **dry run**. No members will be banned. The following shows exactly what *would* happen in a real scan.`
-        : `Review the totals below carefully. The next step requires **three separate confirmations** before any ban is executed.`,
+        : `Review the totals carefully, then choose an action from the dropdown below.`,
     )
     .setColor(Colors.Gold)
     .addFields(
@@ -187,28 +189,12 @@ export function buildFinalReviewEmbed(session: ScanSession): EmbedBuilder {
     )
     .setFooter({
       text: session.isDryRun
-        ? 'Dry run complete — no action will be taken.'
-        : 'No bans have been executed yet. This is confirmation step 1 of 3.',
+        ? 'Dry run complete — choose an action below.'
+        : 'No bans have been executed yet. Select an action from the dropdown.',
     })
     .setTimestamp();
 }
 
-export function buildConfirmationEmbed(
-  step: 2 | 3,
-  pendingCount: number,
-): EmbedBuilder {
-  const warnings = [
-    '',
-    `⚠️ **Confirmation ${step}/3** — Are you sure you want to ban **${pendingCount}** member(s)?`,
-    `🚨 **FINAL WARNING (${step}/3)** — This will **permanently ban ${pendingCount} member(s)**.\nThis action **cannot be undone**. Proceed only if you are certain.`,
-  ];
-
-  return new EmbedBuilder()
-    .setTitle(`Confirmation ${step} of 3`)
-    .setDescription(warnings[step])
-    .setColor(step === 3 ? Colors.DarkRed : Colors.Red)
-    .setTimestamp();
-}
 
 export function buildBanProgressEmbed(opts: {
   banned: number;
@@ -311,56 +297,34 @@ export function buildNoMembersStageEmbed(stage: 1 | 2, isDryRun: boolean): Embed
     .setTimestamp();
 }
 
-// ── Final review buttons ──────────────────────────────────────────────────────
+// ── Final review dropdown ─────────────────────────────────────────────────────
 
-export function buildFinalReviewRows(
+export function buildFinalSelectRow(
   sessionId: string,
   isDryRun: boolean,
-): ActionRowBuilder<ButtonBuilder>[] {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`final_confirm1_${sessionId}`)
-        .setLabel(isDryRun ? '✅ Finish Dry Run' : '✅ Confirm Ban (1/3)')
-        .setStyle(isDryRun ? ButtonStyle.Primary : ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId(`final_cancel_${sessionId}`)
-        .setLabel('🚫 Cancel')
-        .setStyle(ButtonStyle.Secondary),
-    ),
-  ];
-}
+  totalPending: number,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`final_select_${sessionId}`)
+    .setPlaceholder('Choose an action…')
+    .addOptions(
+      isDryRun
+        ? new StringSelectMenuOptionBuilder()
+            .setValue('dry_run_finish')
+            .setLabel('Finish Dry Run')
+            .setDescription('End the simulation — no members will be banned.')
+            .setEmoji('✅')
+        : new StringSelectMenuOptionBuilder()
+            .setValue('ban_confirm')
+            .setLabel(`Ban ${totalPending} member(s) — I understand this is permanent`)
+            .setDescription('This cannot be undone. All flagged members will be banned.')
+            .setEmoji('⛔'),
+      new StringSelectMenuOptionBuilder()
+        .setValue('cancel')
+        .setLabel('Cancel — do not ban anyone')
+        .setDescription('Abort the scan. No members will be affected.')
+        .setEmoji('🚫'),
+    );
 
-export function buildConfirmation2Rows(
-  sessionId: string,
-): ActionRowBuilder<ButtonBuilder>[] {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`final_confirm2_${sessionId}`)
-        .setLabel('✅ Yes, Confirm (2/3)')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId(`final_cancel_${sessionId}`)
-        .setLabel('🚫 Cancel')
-        .setStyle(ButtonStyle.Secondary),
-    ),
-  ];
-}
-
-export function buildConfirmation3Rows(
-  sessionId: string,
-): ActionRowBuilder<ButtonBuilder>[] {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`final_confirm3_${sessionId}`)
-        .setLabel('🚨 CONFIRM BAN — Final (3/3)')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId(`final_cancel_${sessionId}`)
-        .setLabel('🚫 Cancel')
-        .setStyle(ButtonStyle.Secondary),
-    ),
-  ];
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
 }

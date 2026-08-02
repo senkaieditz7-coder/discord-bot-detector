@@ -8,10 +8,7 @@ import {
 import { type ScanSession, deleteSession } from './ScanSession.js';
 import {
   buildFinalReviewEmbed,
-  buildConfirmationEmbed,
-  buildFinalReviewRows,
-  buildConfirmation2Rows,
-  buildConfirmation3Rows,
+  buildFinalSelectRow,
   buildCancelledEmbed,
   buildDryRunCompleteEmbed,
 } from '../utils/embeds.js';
@@ -31,26 +28,43 @@ export async function showFinalReview(
 
   const reviewMsg = await interaction.followUp({
     embeds: [buildFinalReviewEmbed(session)],
-    components: buildFinalReviewRows(session.id, session.isDryRun),
+    components: [buildFinalSelectRow(session.id, session.isDryRun, totalPending)],
   });
 
   const collector = reviewMsg.createMessageComponentCollector({
-    componentType: ComponentType.Button,
+    componentType: ComponentType.StringSelect,
     filter: i => i.user.id === interaction.user.id,
     time: INTERACTION_TIMEOUT_MS,
     max: 1,
   });
 
-  collector.on('collect', async btn => {
-    const id = btn.customId;
+  collector.on('collect', async selectMenu => {
+    // ── Acknowledge IMMEDIATELY — must happen within 3 seconds ────────────────
+    // deferUpdate() tells Discord "we got it" without changing the message yet.
+    // All async work (DB writes, bans) happens after this point safely.
+    await selectMenu.deferUpdate();
 
-    // ── Dry run ends here ──────────────────────────────────────────────────
-    if (session.isDryRun && id === `final_confirm1_${session.id}`) {
+    const value = selectMenu.values[0];
+    const scanId = session.id;
+
+    // ── Cancel ────────────────────────────────────────────────────────────────
+    if (value === 'cancel') {
+      session.stage = 'cancelled';
+      deleteSession(session.guildId);
+      await selectMenu.editReply({
+        embeds: [buildCancelledEmbed()],
+        components: [],
+      });
+      logger.info('Scan cancelled at final review', { scanId });
+      return;
+    }
+
+    // ── Dry run finish ────────────────────────────────────────────────────────
+    if (value === 'dry_run_finish') {
       session.stage = 'complete';
 
-      // Log dry run results
       queries.insertScanLog({
-        scanId: session.id,
+        scanId,
         guildId: session.guildId,
         isDryRun: true,
         startedAt: session.startedAt.toISOString(),
@@ -61,134 +75,45 @@ export async function showFinalReview(
         totalRescued: session.rescuedIds.size,
       });
 
-      const memberLogs = session.allResults.map(r => ({
-        scanId: session.id,
-        guildId: session.guildId,
-        userId: r.member.id,
-        username: r.member.user.username,
-        confidence: r.score,
-        riskLevel: r.riskLevel,
-        reasons: r.reasons,
-        wasRescued: session.rescuedIds.has(r.member.id),
-        wasBanned: false,
-        banStatus: 'dry_run' as const,
-      }));
-      queries.insertMemberLogsBatch(memberLogs);
+      queries.insertMemberLogsBatch(
+        session.allResults.map(r => ({
+          scanId,
+          guildId: session.guildId,
+          userId: r.member.id,
+          username: r.member.user.username,
+          confidence: r.score,
+          riskLevel: r.riskLevel,
+          reasons: r.reasons,
+          wasRescued: session.rescuedIds.has(r.member.id),
+          wasBanned: false,
+          banStatus: 'dry_run' as const,
+        })),
+      );
 
       deleteSession(session.guildId);
-      await btn.update({
+      await selectMenu.editReply({
         embeds: [
           buildDryRunCompleteEmbed({
             wouldBanHigh: session.stage1Pending.length,
             wouldBanPossible: session.stage2Pending.length,
             rescued: session.rescuedIds.size,
-            scanId: session.id,
+            scanId,
           }),
         ],
         components: [],
       });
-      logger.info('Dry run completed', { scanId: session.id });
+      logger.info('Dry run completed', { scanId });
       return;
     }
 
-    // ── Cancel ─────────────────────────────────────────────────────────────
-    if (id === `final_cancel_${session.id}`) {
-      session.stage = 'cancelled';
-      deleteSession(session.guildId);
-      await btn.update({ embeds: [buildCancelledEmbed()], components: [] });
-      logger.info('Scan cancelled at final review', { scanId: session.id });
-      return;
-    }
-
-    // ── Confirmation 1 of 3 ────────────────────────────────────────────────
-    if (id === `final_confirm1_${session.id}`) {
-      session.stage = 'confirming2';
-      await btn.update({
-        embeds: [buildConfirmationEmbed(2, totalPending)],
-        components: buildConfirmation2Rows(session.id),
-      });
-      awaitConfirmation2(interaction, session, channel, reviewMsg);
-    }
-  });
-
-  collector.on('end', (_, reason) => {
-    if (reason === 'time') {
-      deleteSession(session.guildId);
-      reviewMsg.edit({ content: '⏰ Session expired.', components: [] }).catch(() => {});
-    }
-  });
-}
-
-// ── Confirmation step 2 ───────────────────────────────────────────────────────
-async function awaitConfirmation2(
-  interaction: ChatInputCommandInteraction,
-  session: ScanSession,
-  channel: TextChannel,
-  msg: Awaited<ReturnType<typeof interaction.followUp>>,
-): Promise<void> {
-  const totalPending = session.stage1Pending.length + session.stage2Pending.length;
-
-  const collector = msg.createMessageComponentCollector({
-    componentType: ComponentType.Button,
-    filter: i => i.user.id === interaction.user.id,
-    time: INTERACTION_TIMEOUT_MS,
-    max: 1,
-  });
-
-  collector.on('collect', async btn => {
-    if (btn.customId === `final_cancel_${session.id}`) {
-      session.stage = 'cancelled';
-      deleteSession(session.guildId);
-      await btn.update({ embeds: [buildCancelledEmbed()], components: [] });
-      return;
-    }
-    if (btn.customId === `final_confirm2_${session.id}`) {
-      session.stage = 'confirming3';
-      await btn.update({
-        embeds: [buildConfirmationEmbed(3, totalPending)],
-        components: buildConfirmation3Rows(session.id),
-      });
-      awaitConfirmation3(interaction, session, channel, msg);
-    }
-  });
-
-  collector.on('end', (_, reason) => {
-    if (reason === 'time') {
-      deleteSession(session.guildId);
-      msg.edit({ content: '⏰ Session expired.', components: [] }).catch(() => {});
-    }
-  });
-}
-
-// ── Confirmation step 3 (final) ───────────────────────────────────────────────
-async function awaitConfirmation3(
-  interaction: ChatInputCommandInteraction,
-  session: ScanSession,
-  channel: TextChannel,
-  msg: Awaited<ReturnType<typeof interaction.followUp>>,
-): Promise<void> {
-  const collector = msg.createMessageComponentCollector({
-    componentType: ComponentType.Button,
-    filter: i => i.user.id === interaction.user.id,
-    time: INTERACTION_TIMEOUT_MS,
-    max: 1,
-  });
-
-  collector.on('collect', async btn => {
-    if (btn.customId === `final_cancel_${session.id}`) {
-      session.stage = 'cancelled';
-      deleteSession(session.guildId);
-      await btn.update({ embeds: [buildCancelledEmbed()], components: [] });
-      return;
-    }
-    if (btn.customId === `final_confirm3_${session.id}`) {
+    // ── Ban confirmed ─────────────────────────────────────────────────────────
+    if (value === 'ban_confirm') {
       session.stage = 'banning';
-      // Disable buttons to prevent double-clicks
-      await btn.update({
+      await selectMenu.editReply({
         embeds: [
           new EmbedBuilder()
             .setTitle('⛔ Ban process starting…')
-            .setDescription('All three confirmations received. Beginning ban sequence.')
+            .setDescription('Selection received. Beginning ban sequence.')
             .setColor(Colors.DarkRed)
             .setTimestamp(),
         ],
@@ -201,7 +126,7 @@ async function awaitConfirmation3(
   collector.on('end', (_, reason) => {
     if (reason === 'time') {
       deleteSession(session.guildId);
-      msg.edit({ content: '⏰ Session expired.', components: [] }).catch(() => {});
+      reviewMsg.edit({ content: '⏰ Session expired.', components: [] }).catch(() => {});
     }
   });
 }
