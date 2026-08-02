@@ -8,6 +8,7 @@
 import { REST, Routes } from 'discord.js';
 import * as scan from './commands/scan.js';
 import * as dryscan from './commands/dryscan.js';
+import * as stopscan from './commands/stopscan.js';
 import { logger } from './utils/logger.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
@@ -27,7 +28,7 @@ if (!appId) {
 const safeAppId = appId as string;
 const safeToken = token as string;
 
-const commands = [scan.data.toJSON(), dryscan.data.toJSON()];
+const commands = [scan.data.toJSON(), dryscan.data.toJSON(), stopscan.data.toJSON()];
 const rest = new REST({ version: '10' }).setToken(safeToken);
 
 async function main() {

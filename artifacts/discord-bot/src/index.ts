@@ -3,12 +3,14 @@ import { Events, type Interaction } from 'discord.js';
 import { client } from './client.js';
 import * as scan from './commands/scan.js';
 import * as dryscan from './commands/dryscan.js';
+import * as stopscan from './commands/stopscan.js';
 import { logger } from './utils/logger.js';
 
 // ── Command registry ──────────────────────────────────────────────────────────
 const commands = new Map([
   [scan.data.name, scan],
   [dryscan.data.name, dryscan],
+  [stopscan.data.name, stopscan],
 ]);
 
 // ── Ready ─────────────────────────────────────────────────────────────────────
