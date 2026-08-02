@@ -110,20 +110,12 @@ export const queries = {
 
   /** Batch-insert member logs inside a single transaction */
   insertMemberLogsBatch(logs: MemberLogData[]) {
-    const insertAll = db.prepare(`
-      INSERT INTO member_logs
-        (scan_id, guild_id, user_id, username, confidence, risk_level,
-         reasons, was_rescued, was_banned, ban_status)
-      VALUES
-        ($scanId, $guildId, $userId, $username, $confidence, $riskLevel,
-         $reasons, $wasRescued, $wasBanned, $banStatus)
-    `);
-
+    // Reuse the module-level prepared statement instead of repreparing on every call
     // node:sqlite wraps in transaction via BEGIN/COMMIT manually
     db.exec('BEGIN');
     try {
       for (const data of logs) {
-        insertAll.run({
+        insertMemberLogStmt.run({
           $scanId: data.scanId,
           $guildId: data.guildId,
           $userId: data.userId,

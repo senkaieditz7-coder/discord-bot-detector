@@ -4,7 +4,6 @@ import { client } from './client.js';
 import * as scan from './commands/scan.js';
 import * as dryscan from './commands/dryscan.js';
 import { logger } from './utils/logger.js';
-import { getSession } from './workflow/ScanSession.js';
 
 // ── Command registry ──────────────────────────────────────────────────────────
 const commands = new Map([

@@ -124,7 +124,7 @@ export async function executeBans(
   queries.insertScanLog({
     scanId: session.id,
     guildId: session.guildId,
-    isDryRun: false,
+    isDryRun: session.isDryRun,
     startedAt: session.startedAt.toISOString(),
     totalScanned: session.allResults.length,
     totalHigh: session.highConfidence.length,
